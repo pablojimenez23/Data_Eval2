@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  data:
+    build: .
+    container_name: innovatech-data
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - innovatech-net
+
+volumes:
+  mysql-data:
+    driver: local
+
+networks:
+  innovatech-net:
+    driver: bridge
