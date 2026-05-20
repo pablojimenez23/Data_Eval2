@@ -1,3 +1,34 @@
+name: CI/CD Data Innovatech
+
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  build-and-deploy:
+    name: Build, Push y Deploy Data
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Login en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build y Push imagen Docker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            pabloandres23/innovatech-data:latest
+            pabloandres23/innovatech-data:${{ github.sha }}
+
       - name: Desplegar en EC2-Data via Frontend + Backend
         uses: appleboy/ssh-action@v1.0.0
         with:
