@@ -1,0 +1,75 @@
+name: CI/CD Data Innovatech
+
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  build-and-deploy:
+    name: Build, Push y Deploy Data
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v3
+
+      - name: Login en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build y Push imagen Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            pabloandres23/innovatech-data:latest
+            pabloandres23/innovatech-data:${{ github.sha }}
+
+      - name: Desplegar en EC2-Data via bastion
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "${{ secrets.EC2_DATA_KEY }}" > /tmp/key-data.pem
+            chmod 400 /tmp/key-data.pem
+
+            cat > /tmp/data.env << EOF
+            MYSQL_DATABASE=proyecto_db
+            MYSQL_USER=app_user
+            MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+            MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+            EOF
+
+            scp -i /tmp/key-data.pem \
+              -o StrictHostKeyChecking=no \
+              /tmp/data.env \
+              ubuntu@${{ secrets.EC2_DATA_HOST }}:/home/ubuntu/data.env
+
+            ssh -i /tmp/key-data.pem \
+              -o StrictHostKeyChecking=no \
+              ubuntu@${{ secrets.EC2_DATA_HOST }} << 'ENDSSH'
+                docker stop innovatech-data || true
+                docker rm innovatech-data || true
+                docker pull pabloandres23/innovatech-data:latest
+
+                docker run -d \
+                  --name innovatech-data \
+                  --restart always \
+                  -p 3306:3306 \
+                  --env-file /home/ubuntu/data.env \
+                  -v mysql-data:/var/lib/mysql \
+                  pabloandres23/innovatech-data:latest
+
+                sleep 15
+                docker ps | grep innovatech-data
+                echo "Data OK"
+            ENDSSH
+
+            rm /tmp/key-data.pem
+            rm /tmp/data.env
