@@ -174,4 +174,4 @@ DELIMITER ;
 -- Para verificar la creación:
 -- USE proyecto_db;
 -- SHOW TABLES;
--- DESCRIBE usuarios;
+-- DESCRIBE usuarios;;;
