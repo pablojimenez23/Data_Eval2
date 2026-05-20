@@ -1,41 +1,14 @@
-name: CI/CD Data Innovatech
-
-on:
-  push:
-    branches:
-      - deploy
-
-jobs:
-  build-and-deploy:
-    name: Build, Push y Deploy Data
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout codigo
-        uses: actions/checkout@v4
-
-      - name: Login en Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build y Push imagen Docker
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            pabloandres23/innovatech-data:latest
-            pabloandres23/innovatech-data:${{ github.sha }}
-
-      - name: Desplegar en EC2-Data via bastion
+      - name: Desplegar en EC2-Data via Frontend + Backend
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+
           script: |
+            echo "${{ secrets.EC2_BACKEND_KEY }}" > /tmp/key-backend.pem
+            chmod 400 /tmp/key-backend.pem
+
             echo "${{ secrets.EC2_DATA_KEY }}" > /tmp/key-data.pem
             chmod 400 /tmp/key-data.pem
 
@@ -46,30 +19,46 @@ jobs:
             MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
             EOF
 
-            scp -i /tmp/key-data.pem \
+            scp -i /tmp/key-backend.pem \
+              -o StrictHostKeyChecking=no \
+              /tmp/key-data.pem \
+              ubuntu@10.0.2.107:/tmp/
+
+            scp -i /tmp/key-backend.pem \
               -o StrictHostKeyChecking=no \
               /tmp/data.env \
-              ubuntu@${{ secrets.EC2_DATA_HOST }}:/home/ubuntu/data.env
+              ubuntu@10.0.2.107:/tmp/
 
-            ssh -i /tmp/key-data.pem \
+            ssh -i /tmp/key-backend.pem \
               -o StrictHostKeyChecking=no \
-              ubuntu@${{ secrets.EC2_DATA_HOST }} << 'ENDSSH'
-                docker stop innovatech-data || true
-                docker rm innovatech-data || true
-                docker pull pabloandres23/innovatech-data:latest
+              ubuntu@10.0.2.107 << 'BACKENDSSH'
 
-                docker run -d \
-                  --name innovatech-data \
-                  --restart always \
-                  -p 3306:3306 \
-                  --env-file /home/ubuntu/data.env \
-                  -v mysql-data:/var/lib/mysql \
-                  pabloandres23/innovatech-data:latest
+                chmod 400 /tmp/key-data.pem
 
-                sleep 15
-                docker ps | grep innovatech-data
-                echo "Data OK"
-            ENDSSH
+                scp -i /tmp/key-data.pem \
+                  -o StrictHostKeyChecking=no \
+                  /tmp/data.env \
+                  ubuntu@10.0.3.164:/home/ubuntu/data.env
 
-            rm /tmp/key-data.pem
-            rm /tmp/data.env
+                ssh -i /tmp/key-data.pem \
+                  -o StrictHostKeyChecking=no \
+                  ubuntu@10.0.3.164 << 'DATASSH'
+
+                    docker stop innovatech-data || true
+                    docker rm innovatech-data || true
+
+                    docker pull pabloandres23/innovatech-data:latest
+
+                    docker run -d \
+                      --name innovatech-data \
+                      --restart always \
+                      -p 3306:3306 \
+                      --env-file /home/ubuntu/data.env \
+                      -v mysql-data:/var/lib/mysql \
+                      pabloandres23/innovatech-data:latest
+
+                    docker ps | grep innovatech-data
+
+                  DATASSH
+
+              BACKENDSSH
